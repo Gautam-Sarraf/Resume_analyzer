@@ -1,25 +1,112 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+from typing import Optional, Union
+
 import fitz
+from fastapi import (
+    FastAPI,
+    UploadFile,
+    File,
+    Form,
+    HTTPException,
+)
+from fastapi.middleware.cors import CORSMiddleware
+
 from analyzer import analyze_resume as run_analysis
 
 app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.get("/")
 def health():
-    return {"status": "running", "service": "resume-analyzer"}
+    return {
+        "status": "running",
+        "service": "resume-analyzer"
+    }
+
 
 @app.post("/analyze")
-async def analyze(resume: UploadFile = File(...), job_description: str = Form(...)):
-    if not job_description.strip():
-        raise HTTPException(status_code=400, detail="Job description cannot be empty")
+async def analyze(
+    resume_text: Optional[str] = Form(None),
+    resume_file: Union[UploadFile, str, None] = File(None),
+    job_description_text: Optional[str] = Form(None),
+    job_description_file: Union[UploadFile, str, None] = File(None),
+):
+    # -------------------------
+    # Extract Resume Content
+    # -------------------------
+    resume_content = ""
+    if resume_text and resume_text.strip():
+        resume_content = resume_text.strip()
+    elif resume_file:
+        if isinstance(resume_file, UploadFile):
+            if resume_file.filename:
+                if not resume_file.content_type.startswith("application/pdf"):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Resume file must be a PDF"
+                    )
+                pdf_bytes = await resume_file.read()
+                doc = fitz.open(
+                    stream=pdf_bytes,
+                    filetype="pdf"
+                )
+                resume_content = "\n".join(
+                    page.get_text()
+                    for page in doc
+                ).strip()
+        elif isinstance(resume_file, str) and resume_file.strip():
+            resume_content = resume_file.strip()
 
-    pdf_bytes = await resume.read()
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    resume_text = "\n".join(page.get_text() for page in doc)
+    if not resume_content:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide either resume text or resume file"
+        )
 
-    if not resume_text.strip():
-        raise HTTPException(status_code=400, detail="Could not extract text from PDF")
+    # -------------------------
+    # Extract Job Description
+    # -------------------------
+    job_description = ""
+    if job_description_text and job_description_text.strip():
+        job_description = job_description_text.strip()
+    elif job_description_file:
+        if isinstance(job_description_file, UploadFile):
+            if job_description_file.filename:
+                if not job_description_file.content_type.startswith("application/pdf"):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Job description file must be a PDF"
+                    )
+                pdf_bytes = await job_description_file.read()
+                doc = fitz.open(
+                    stream=pdf_bytes,
+                    filetype="pdf"
+                )
+                job_description = "\n".join(
+                    page.get_text()
+                    for page in doc
+                ).strip()
+        elif isinstance(job_description_file, str) and job_description_file.strip():
+            job_description = job_description_file.strip()
 
-    return run_analysis(resume_text, job_description)
+    if not job_description:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide either job description text or job description file"
+        )
+
+    # -------------------------
+    # Run Analysis
+    # -------------------------
+    result = run_analysis(
+        resume_content,
+        job_description
+    )
+
+    return result
