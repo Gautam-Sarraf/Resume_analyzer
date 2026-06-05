@@ -8,6 +8,7 @@ from fastapi import (
     Form,
     HTTPException,
 )
+from starlette.datastructures import UploadFile as StarletteUploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from analyzer import analyze_resume as run_analysis
@@ -41,27 +42,28 @@ async def analyze(
     # Extract Resume Content
     # -------------------------
     resume_content = ""
-    if resume_text and resume_text.strip():
+    # 1. Prioritize a valid UploadFile if one was actually uploaded
+    if isinstance(resume_file, StarletteUploadFile) and resume_file.filename and resume_file.filename.strip():
+        if not resume_file.content_type.startswith("application/pdf"):
+            raise HTTPException(
+                status_code=400,
+                detail="Resume file must be a PDF"
+            )
+        pdf_bytes = await resume_file.read()
+        doc = fitz.open(
+            stream=pdf_bytes,
+            filetype="pdf"
+        )
+        resume_content = "\n".join(
+            page.get_text()
+            for page in doc
+        ).strip()
+    # 2. Fall back to resume_text
+    elif resume_text and resume_text.strip():
         resume_content = resume_text.strip()
-    elif resume_file:
-        if isinstance(resume_file, UploadFile):
-            if resume_file.filename:
-                if not resume_file.content_type.startswith("application/pdf"):
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Resume file must be a PDF"
-                    )
-                pdf_bytes = await resume_file.read()
-                doc = fitz.open(
-                    stream=pdf_bytes,
-                    filetype="pdf"
-                )
-                resume_content = "\n".join(
-                    page.get_text()
-                    for page in doc
-                ).strip()
-        elif isinstance(resume_file, str) and resume_file.strip():
-            resume_content = resume_file.strip()
+    # 3. Fall back to resume_file if it was sent as a raw text string
+    elif isinstance(resume_file, str) and resume_file.strip():
+        resume_content = resume_file.strip()
 
     if not resume_content:
         raise HTTPException(
@@ -73,27 +75,28 @@ async def analyze(
     # Extract Job Description
     # -------------------------
     job_description = ""
-    if job_description_text and job_description_text.strip():
+    # 1. Prioritize a valid UploadFile if one was actually uploaded
+    if isinstance(job_description_file, StarletteUploadFile) and job_description_file.filename and job_description_file.filename.strip():
+        if not job_description_file.content_type.startswith("application/pdf"):
+            raise HTTPException(
+                status_code=400,
+                detail="Job description file must be a PDF"
+            )
+        pdf_bytes = await job_description_file.read()
+        doc = fitz.open(
+            stream=pdf_bytes,
+            filetype="pdf"
+        )
+        job_description = "\n".join(
+            page.get_text()
+            for page in doc
+        ).strip()
+    # 2. Fall back to job_description_text
+    elif job_description_text and job_description_text.strip():
         job_description = job_description_text.strip()
-    elif job_description_file:
-        if isinstance(job_description_file, UploadFile):
-            if job_description_file.filename:
-                if not job_description_file.content_type.startswith("application/pdf"):
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Job description file must be a PDF"
-                    )
-                pdf_bytes = await job_description_file.read()
-                doc = fitz.open(
-                    stream=pdf_bytes,
-                    filetype="pdf"
-                )
-                job_description = "\n".join(
-                    page.get_text()
-                    for page in doc
-                ).strip()
-        elif isinstance(job_description_file, str) and job_description_file.strip():
-            job_description = job_description_file.strip()
+    # 3. Fall back to job_description_file if it was sent as a raw text string
+    elif isinstance(job_description_file, str) and job_description_file.strip():
+        job_description = job_description_file.strip()
 
     if not job_description:
         raise HTTPException(
