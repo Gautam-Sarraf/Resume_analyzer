@@ -107,9 +107,21 @@ async def analyze(
     # -------------------------
     # Run Analysis
     # -------------------------
-    result = run_analysis(
-        resume_content,
-        job_description
-    )
-
-    return result
+    try:
+        result = run_analysis(
+            resume_content,
+            job_description
+        )
+        return result
+    except Exception as e:
+        status_code = 500
+        # If it's an APIError, it might have a code / status_code attribute
+        err_code = getattr(e, "code", None) or getattr(e, "status_code", None)
+        if err_code and isinstance(err_code, int):
+            status_code = err_code
+        
+        detail_msg = getattr(e, "message", str(e))
+        raise HTTPException(
+            status_code=status_code,
+            detail=f"Analysis service error: {detail_msg}"
+        )
